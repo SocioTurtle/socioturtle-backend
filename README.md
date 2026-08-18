@@ -139,7 +139,7 @@ Set these in `backend/.env` (or the Render dashboard):
 EMAIL_BACKEND=smtp
 SMTP_HOST=smtp.zoho.in          # or smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=hello@socioturtle.com
+SMTP_USER=admin@socioturtle.com
 SMTP_PASSWORD=<app password>
 ```
 

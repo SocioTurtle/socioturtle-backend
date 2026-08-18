@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # console | smtp
     email_backend: str = "console"
-    email_from: str = "hello@socioturtle.com"
+    email_from: str = "admin@socioturtle.com"
     email_from_name: str = "SocioTurtle"
     email_reply_to: str = ""
 

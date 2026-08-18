@@ -66,6 +66,15 @@
     "padding:10px 12px 4px;box-shadow:0 0 0 3px rgba(76,95,215,.12);}",
     ".st-f-highlight label{color:#3543b3;}",
     ".st-f-highlight input{border-color:#4c5fd7;}",
+    ".st-row-inline{display:flex;gap:8px;}",
+    ".st-row-inline input{flex:1;min-width:0;}",
+    ".st-otp-btn{flex:none;background:#4c5fd7;color:#fff;border:none;border-radius:8px;",
+    "padding:9px 12px;font-size:.82rem;font-weight:600;cursor:pointer;font-family:inherit;",
+    "white-space:nowrap;}",
+    ".st-otp-btn:disabled{opacity:.6;cursor:not-allowed;}",
+    ".st-ok-mini{display:block;font-size:.74rem;color:#1a7f4b;margin-top:4px;}",
+    ".st-hint{display:block;font-size:.74rem;color:#6b7284;margin-top:4px;}",
+    ".st-otp-row{margin-top:10px;}",
     ".st-err{display:block;font-size:.74rem;color:#c0392b;margin-top:3px;}",
     ".st-cap{display:flex;align-items:center;gap:10px;margin-bottom:8px;}",
     ".st-cap img{width:180px;height:58px;border:1px solid #dfe3ec;border-radius:8px;background:#f2f4f7;}",
@@ -145,18 +154,23 @@
     var role = null;
     var challengeId = null;
     var busy = false;
+    var otpBusy = false;
+    var emailVerifyToken = null;
+    var verifiedEmail = null;
 
     container.className = "st-card";
     container.innerHTML = [
       opts.dismissible ? '<button class="st-x" type="button" aria-label="Close">&times;</button>' : "",
       '<h2 class="st-h">Get early access</h2>',
-      '<p class="st-sub">Join SocioTurtle as a student or a mentor. We will email you an invitation.</p>',
+      '<p class="st-sub">Join SocioTurtle as a student, mentor, or employer. We will email you an invitation.</p>',
       '<div class="st-alert" data-alert hidden></div>',
       '<div class="st-roles" role="group" aria-label="Register as">',
       '<button type="button" class="st-role" data-role="student" aria-pressed="false">',
       "<b>Student</b><span>Build skills, get verified, get hired.</span></button>",
       '<button type="button" class="st-role" data-role="mentor" aria-pressed="false">',
       "<b>Mentor</b><span>Guide learners and verify portfolios.</span></button>",
+      '<button type="button" class="st-role" data-role="employer" aria-pressed="false">',
+      "<b>Employer</b><span>Discover talent, hire with confidence.</span></button>",
       "</div>",
       '<span class="st-err" data-err-role hidden></span>',
       '<form novalidate>',
@@ -164,8 +178,18 @@
       '<input id="st-name" name="name" autocomplete="name">',
       '<span class="st-err" data-err-name hidden></span></div>',
       '<div class="st-f st-f-highlight"><label for="st-email">Email</label>',
-      '<input id="st-email" name="email" type="email" autocomplete="email">',
-      '<span class="st-err" data-err-email hidden></span></div>',
+      '<div class="st-row-inline"><input id="st-email" name="email" type="email" autocomplete="email">',
+      '<button type="button" class="st-otp-btn" data-otp-send>Send code</button></div>',
+      '<span class="st-err" data-err-email hidden></span>',
+      '<span class="st-ok-mini" data-email-verified hidden>✓ Email verified</span>',
+      '<div class="st-otp-row" data-otp-row hidden>',
+      '<label for="st-otp">Verification code</label>',
+      '<div class="st-row-inline"><input id="st-otp" name="otp" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6-digit code">',
+      '<button type="button" class="st-otp-btn" data-otp-verify>Verify</button></div>',
+      '<span class="st-err" data-err-otp hidden></span>',
+      '<span class="st-hint" data-otp-hint></span>',
+      "</div>",
+      "</div>",
       '<div class="st-row">',
       '<div class="st-f"><label for="st-phone">Phone <span style="font-weight:400;color:#8b91a1;">(optional)</span></label>',
       '<input id="st-phone" name="phone" autocomplete="tel"></div>',
@@ -204,7 +228,7 @@
     }
 
     function clearErrors() {
-      ["role", "name", "email", "captcha"].forEach(function (f) {
+      ["role", "name", "email", "otp", "captcha"].forEach(function (f) {
         setErr(f, "");
       });
       alertBox.hidden = true;
@@ -223,6 +247,118 @@
         });
         setErr("role", "");
       });
+    });
+
+    var emailVerifiedBadge = container.querySelector("[data-email-verified]");
+    var otpRow = container.querySelector("[data-otp-row]");
+    var otpHint = container.querySelector("[data-otp-hint]");
+    var otpSendBtn = container.querySelector("[data-otp-send]");
+    var otpVerifyBtn = container.querySelector("[data-otp-verify]");
+
+    function markEmailUnverified() {
+      emailVerifyToken = null;
+      verifiedEmail = null;
+      emailVerifiedBadge.hidden = true;
+    }
+
+    form.elements.email.addEventListener("input", function () {
+      var current = form.elements.email.value.trim();
+      if (verifiedEmail && current !== verifiedEmail) markEmailUnverified();
+    });
+
+    otpSendBtn.addEventListener("click", function () {
+      if (otpBusy) return;
+      var email = form.elements.email.value.trim();
+      setErr("email", "");
+
+      if (!email || !EMAIL_RE.test(email)) {
+        setErr("email", "Enter a valid email address.");
+        return;
+      }
+
+      otpBusy = true;
+      otpSendBtn.disabled = true;
+      otpSendBtn.textContent = "Sending…";
+
+      fetch(CFG.api + "/api/leads/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email }),
+      })
+        .then(function (response) {
+          return response.json().then(function (body) {
+            return { ok: response.ok, body: body };
+          });
+        })
+        .then(function (result) {
+          if (!result.ok) {
+            var detail = result.body && result.body.detail;
+            if (typeof detail !== "string") detail = "Could not send a code. Please try again.";
+            setErr("email", detail);
+            return;
+          }
+          markEmailUnverified();
+          setErr("otp", "");
+          otpRow.hidden = false;
+          otpHint.textContent = "Code sent to " + email + ". It expires in a few minutes.";
+          form.elements.otp.focus();
+        })
+        .catch(function () {
+          setErr("email", "Could not reach the server. Please check your connection and try again.");
+        })
+        .finally(function () {
+          otpBusy = false;
+          otpSendBtn.disabled = false;
+          otpSendBtn.textContent = "Send code";
+        });
+    });
+
+    otpVerifyBtn.addEventListener("click", function () {
+      if (otpBusy) return;
+      var email = form.elements.email.value.trim();
+      var code = form.elements.otp.value.trim();
+      setErr("otp", "");
+
+      if (!code) {
+        setErr("otp", "Enter the 6-digit code sent to your email.");
+        return;
+      }
+
+      otpBusy = true;
+      otpVerifyBtn.disabled = true;
+      otpVerifyBtn.textContent = "Verifying…";
+
+      fetch(CFG.api + "/api/leads/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email, code: code }),
+      })
+        .then(function (response) {
+          return response.json().then(function (body) {
+            return { ok: response.ok, body: body };
+          });
+        })
+        .then(function (result) {
+          if (!result.ok) {
+            var detail = result.body && result.body.detail;
+            if (typeof detail !== "string") detail = "Incorrect code. Please try again.";
+            setErr("otp", detail);
+            return;
+          }
+          emailVerifyToken = result.body.verify_token;
+          verifiedEmail = email;
+          emailVerifiedBadge.hidden = false;
+          otpRow.hidden = true;
+          form.elements.otp.value = "";
+        })
+        .catch(function () {
+          setErr("otp", "Could not reach the server. Please check your connection and try again.");
+        })
+        .finally(function () {
+          otpBusy = false;
+          otpVerifyBtn.disabled = false;
+          otpVerifyBtn.textContent = "Verify";
+        });
     });
 
     function loadCaptcha() {
@@ -263,7 +399,7 @@
       var bad = false;
 
       if (!role) {
-        setErr("role", "Choose student or mentor.");
+        setErr("role", "Choose student, mentor, or employer.");
         bad = true;
       }
       if (!name) {
@@ -275,6 +411,9 @@
         bad = true;
       } else if (!EMAIL_RE.test(email)) {
         setErr("email", "Enter a valid email address.");
+        bad = true;
+      } else if (!emailVerifyToken || verifiedEmail !== email) {
+        setErr("email", "Please verify your email address first.");
         bad = true;
       }
       if (!answer) {
@@ -305,6 +444,7 @@
           newsletter_opt_in: form.elements.news.checked,
           source: CFG.source,
           captcha: { challenge_id: challengeId, answer: answer },
+          email_verify_token: emailVerifyToken,
         }),
       })
         .then(function (response) {
