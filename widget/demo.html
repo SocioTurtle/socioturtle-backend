@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget demo — SocioTurtle</title>
+    <script src="https://cdn.tailwindcss.com/"></script>
+  </head>
+  <body class="bg-gray-50 text-gray-800">
+    <!-- Mimics socioturtle.com so the widget can be checked in context. -->
+    <header class="bg-white border-b">
+      <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+        <span class="text-xl font-bold text-indigo-600">SocioTurtle</span>
+        <button
+          onclick="SocioTurtleRegister.open()"
+          class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+        >
+          Register
+        </button>
+      </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-6 py-12">
+      <div class="grid md:grid-cols-2 gap-10 items-start">
+        <div>
+          <h1 class="text-4xl font-bold mb-4">Build projects. Get verified. Get hired.</h1>
+          <p class="text-gray-600 mb-4">
+            A social learning ecosystem connecting students, mentors, and employers.
+          </p>
+          <p class="text-gray-600">Scroll — the popup appears after a few seconds.</p>
+        </div>
+
+        <!-- Inline mount point -->
+        <div id="socioturtle-register"></div>
+      </div>
+
+      <div class="h-[1200px] mt-16 rounded-xl bg-white border flex items-center justify-center text-gray-400">
+        page content
+      </div>
+    </main>
+
+    <script
+      src="./socioturtle-register.js"
+      data-api="http://127.0.0.1:8000"
+      data-modal-delay="6000"
+      data-source="demo"
+    ></script>
+  </body>
+</html>
