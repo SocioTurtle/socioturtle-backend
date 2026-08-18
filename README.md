@@ -133,20 +133,30 @@ python manage.py send-newsletter "Subject" issue.md [--audience all]
 
 ## Sending real email
 
+The production deploy (`render.yaml`) uses `EMAIL_BACKEND=resend`, calling the
+[Resend](https://resend.com) HTTP API over HTTPS rather than raw SMTP. Many
+PaaS free tiers (including Render's) block outbound SMTP ports (25/465/587) to
+prevent spam abuse — that showed up as `/api/leads/otp/send` hanging for ~30s
+and then failing, even with correct SMTP credentials, once OTP email became
+part of the registration flow. Resend sidesteps that since it's just HTTPS.
+
 Set these in `backend/.env` (or the Render dashboard):
 
 ```
-EMAIL_BACKEND=smtp
-SMTP_HOST=smtp.zoho.in          # or smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=admin@socioturtle.com
-SMTP_PASSWORD=<app password>
+EMAIL_BACKEND=resend
+RESEND_API_KEY=<your Resend API key>
+EMAIL_FROM=admin@socioturtle.com
 ```
 
-**Gmail needs an App Password**, not your account password, and requires 2FA to be
-on. Gmail also caps sending at roughly 500/day — fine while the list is small,
-but move to a dedicated sender (Resend, SES, Postmark) before the newsletter
-outgrows that, or deliverability will suffer.
+`EMAIL_FROM` must be on a domain verified in your Resend account, or sending
+will fail — Resend's sandbox `onboarding@resend.dev` sender only delivers to
+the account owner's own address until `socioturtle.com` is verified there
+(add the DNS records Resend gives you, same idea as the API custom domain).
+
+An SMTP backend (`EMAIL_BACKEND=smtp`) still exists in code — `SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` — for a host that does allow SMTP
+egress. **Gmail needs an App Password**, not your account password, and
+requires 2FA to be on; it also caps sending at roughly 500/day.
 
 Always use **Send test** before **Send to subscribers**. There is no unsend.
 

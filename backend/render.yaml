@@ -1,7 +1,13 @@
 # Render blueprint. Point Render at this repo and it provisions both services.
 #
-# Secrets (SECRET_KEY, SMTP_PASSWORD) are marked sync:false so they are NOT read
-# from this file — set them in the Render dashboard, never in git.
+# Secrets (SECRET_KEY, RESEND_API_KEY) are marked sync:false so they are NOT
+# read from this file — set them in the Render dashboard, never in git.
+#
+# EMAIL_BACKEND is "resend" (HTTPS API) rather than "smtp": Render's outbound
+# network blocks raw SMTP ports (25/465/587) on this plan, which made the SMTP
+# backend hang until it timed out. Resend sends over HTTPS instead, so it isn't
+# affected. The smtp backend still exists in code if you ever move to a host
+# that allows SMTP egress.
 services:
   - type: web
     name: socioturtle-api
@@ -31,18 +37,12 @@ services:
       - key: PUBLIC_API_URL
         value: https://api.socioturtle.com
       - key: EMAIL_BACKEND
-        value: smtp
+        value: resend
       - key: EMAIL_FROM
         value: admin@socioturtle.com
       - key: EMAIL_FROM_NAME
         value: SocioTurtle
-      - key: SMTP_HOST
-        value: smtp.zoho.in
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
+      - key: RESEND_API_KEY
         sync: false
       - key: LOG_JSON
         value: "true"

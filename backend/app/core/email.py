@@ -1,9 +1,11 @@
 """Email delivery.
 
 `console` writes messages to the log so the whole invite/newsletter flow can be
-exercised without credentials or a live mail server. `smtp` talks to Gmail, Zoho,
-or any other SMTP host. Both satisfy the same interface, so nothing upstream
-changes when you switch.
+exercised without credentials or a live mail server. `smtp` talks to Gmail,
+Zoho, or any other SMTP host directly over port 25/465/587 — which many PaaS
+free tiers block outbound to prevent spam abuse. `resend` instead calls the
+Resend HTTP API over HTTPS (port 443), which sidesteps that entirely. All
+three satisfy the same interface, so nothing upstream changes when you switch.
 """
 
 import logging
@@ -15,6 +17,8 @@ from dataclasses import dataclass
 from email.message import EmailMessage as MimeMessage
 from email.utils import formataddr
 from typing import Iterator
+
+import httpx
 
 from app.config import get_settings
 
@@ -133,6 +137,48 @@ class SmtpEmailSender(EmailSender):
             raise EmailError(f"Could not send to {message.to}: {exc}") from exc
 
 
+class ResendEmailSender(EmailSender):
+    """Sends via the Resend HTTP API — no SMTP port involved."""
+
+    API_URL = "https://api.resend.com/emails"
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        if not settings.resend_api_key:
+            raise ValueError("RESEND_API_KEY must be set when EMAIL_BACKEND=resend")
+        self.api_key = settings.resend_api_key
+
+    @contextmanager
+    def connection(self) -> Iterator[EmailSender]:
+        # Stateless HTTPS requests — nothing to keep open between messages.
+        yield self
+
+    def send(self, message: EmailMessage) -> None:
+        settings = get_settings()
+        payload: dict = {
+            "from": formataddr((settings.email_from_name, settings.email_from)),
+            "to": [message.to],
+            "subject": message.subject,
+            "html": message.html,
+            "text": message.text,
+        }
+        if message.list_unsubscribe:
+            payload["headers"] = {
+                "List-Unsubscribe": f"<{message.list_unsubscribe}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            }
+        try:
+            response = httpx.post(
+                self.API_URL,
+                json=payload,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=15,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise EmailError(f"Could not send to {message.to}: {exc}") from exc
+
+
 _sender: EmailSender | None = None
 
 
@@ -140,7 +186,12 @@ def get_email_sender() -> EmailSender:
     global _sender
     if _sender is None:
         settings = get_settings()
-        _sender = SmtpEmailSender() if settings.email_backend == "smtp" else ConsoleEmailSender()
+        if settings.email_backend == "smtp":
+            _sender = SmtpEmailSender()
+        elif settings.email_backend == "resend":
+            _sender = ResendEmailSender()
+        else:
+            _sender = ConsoleEmailSender()
         logger.info("email_backend_selected", extra={"backend": settings.email_backend})
     return _sender
 
