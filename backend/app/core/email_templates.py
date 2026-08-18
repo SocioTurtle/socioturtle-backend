@@ -51,11 +51,10 @@ def _button(url: str, label: str) -> str:
 def invite_email(name: str, role: str, activate_url: str, expires_hours: int) -> tuple[str, str]:
     """Returns (html, text). Deliberately carries a link, never a password."""
     greeting = escape(name.split(" ")[0] if name else "there")
-    role_line = (
-        "You will be able to share resources and guide learners."
-        if role == "mentor"
-        else "You will be able to find and save learning resources."
-    )
+    role_line = {
+        "mentor": "You will be able to share resources and guide learners.",
+        "employer": "You will be able to discover talent and connect with candidates.",
+    }.get(role, "You will be able to find and save learning resources.")
     days = max(1, expires_hours // 24)
 
     body = (
@@ -79,6 +78,28 @@ def invite_email(name: str, role: str, activate_url: str, expires_hours: int) ->
         f"— SocioTurtle"
     )
     return _shell(body, "You are receiving this because you registered on socioturtle.com."), text
+
+
+def otp_email(code: str, expires_minutes: int) -> tuple[str, str]:
+    """Returns (html, text) for a registration email-verification code."""
+    code_block = (
+        f'<p style="margin:26px 0;font-size:32px;font-weight:700;letter-spacing:8px;'
+        f'color:{BRAND};">{escape(code)}</p>'
+    )
+    body = (
+        "<p>Hi there,</p>"
+        "<p>Use this code to verify your email and finish registering with SocioTurtle:</p>"
+        f"{code_block}"
+        f'<p style="font-size:13px;color:#6b7284;">This code expires in {expires_minutes} '
+        "minutes. If you did not request this, you can ignore this message.</p>"
+    )
+    text = (
+        f"Your SocioTurtle verification code is: {code}\n\n"
+        f"This code expires in {expires_minutes} minutes.\n\n"
+        "If you did not request this, ignore this message.\n\n"
+        "— SocioTurtle"
+    )
+    return _shell(body, "You are receiving this because you started registering on socioturtle.com."), text
 
 
 def newsletter_email(subject: str, body_markdown: str, unsubscribe_url: str) -> tuple[str, str]:

@@ -47,3 +47,28 @@ def solved_captcha(client, monkeypatch):
         return {"challenge_id": response.json()["challenge_id"], "answer": captured["answer"]}
 
     return _issue
+
+
+@pytest.fixture
+def verified_email(client, monkeypatch):
+    """Send and verify a real OTP end-to-end, returning a live verify_token."""
+    from app.core import otp as otp_module
+
+    captured: dict[str, str] = {}
+    original = otp_module._generate_code
+
+    def spy() -> str:
+        code = original()
+        captured["code"] = code
+        return code
+
+    monkeypatch.setattr(otp_module, "_generate_code", spy)
+
+    def _verify(email: str) -> str:
+        sent = client.post("/api/leads/otp/send", json={"email": email})
+        assert sent.status_code == 200, sent.text
+        verified = client.post("/api/leads/otp/verify", json={"email": email, "code": captured["code"]})
+        assert verified.status_code == 200, verified.text
+        return verified.json()["verify_token"]
+
+    return _verify

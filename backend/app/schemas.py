@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 Role = Literal["student", "mentor"]
+LeadRole = Literal["student", "mentor", "employer"]
 
 
 class CaptchaAnswer(BaseModel):
@@ -75,17 +76,36 @@ class ResourceOut(BaseModel):
 class LeadCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    role: Role
+    role: LeadRole
     phone: str = Field(default="", max_length=32)
     organisation: str = Field(default="", max_length=160)
     newsletter_opt_in: bool = False
     source: str = Field(default="website", max_length=64)
     captcha: CaptchaAnswer
+    email_verify_token: str = Field(min_length=1, max_length=64)
 
 
 class LeadAccepted(BaseModel):
     status: Literal["registered"] = "registered"
     message: str
+
+
+class OtpSendRequest(BaseModel):
+    email: EmailStr
+
+
+class OtpSendResult(BaseModel):
+    message: str
+    expires_in: int
+
+
+class OtpVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=1, max_length=8)
+
+
+class OtpVerifyResult(BaseModel):
+    verify_token: str
 
 
 class LeadOut(BaseModel):
@@ -94,7 +114,7 @@ class LeadOut(BaseModel):
     id: int
     name: str
     email: EmailStr
-    role: Role
+    role: LeadRole
     phone: str
     organisation: str
     source: str
@@ -132,7 +152,7 @@ class InviteCheck(BaseModel):
     valid: bool
     name: str | None = None
     email: EmailStr | None = None
-    role: Role | None = None
+    role: LeadRole | None = None
     reason: str | None = None
 
 

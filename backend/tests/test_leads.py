@@ -7,15 +7,17 @@ from app.database import SessionLocal
 from app.models import Lead, User
 
 
-def register(client, solved_captcha, **overrides):
+def register(client, solved_captcha, verified_email, **overrides):
+    email = overrides.get("email", "asha@example.com")
     payload = {
         "name": "Asha Rao",
-        "email": "asha@example.com",
+        "email": email,
         "role": "student",
         "phone": "9999999999",
         "organisation": "IIT Delhi",
         "newsletter_opt_in": True,
         "captcha": solved_captcha(),
+        "email_verify_token": verified_email(email),
     }
     payload.update(overrides)
     return client.post("/api/leads", json=payload)
@@ -49,25 +51,25 @@ def admin_headers(admin_token):
     return {"Authorization": f"Bearer {admin_token}"}
 
 
-def test_register_lead(client, solved_captcha):
-    response = register(client, solved_captcha)
+def test_register_lead(client, solved_captcha, verified_email):
+    response = register(client, solved_captcha, verified_email)
     assert response.status_code == 201
     assert response.json()["status"] == "registered"
 
 
-def test_register_requires_captcha(client, solved_captcha):
+def test_register_requires_captcha(client, solved_captcha, verified_email):
     bad = solved_captcha()
     bad["answer"] = "WRONG"
-    assert register(client, solved_captcha, captcha=bad).status_code == 400
+    assert register(client, solved_captcha, verified_email, captcha=bad).status_code == 400
 
 
-def test_register_rejects_bad_role(client, solved_captcha):
-    assert register(client, solved_captcha, role="teacher").status_code == 422
+def test_register_rejects_bad_role(client, solved_captcha, verified_email):
+    assert register(client, solved_captcha, verified_email, role="teacher").status_code == 422
 
 
-def test_reregistering_updates_instead_of_failing(client, solved_captcha):
-    register(client, solved_captcha)
-    again = register(client, solved_captcha, name="Asha R.", role="mentor")
+def test_reregistering_updates_instead_of_failing(client, solved_captcha, verified_email):
+    register(client, solved_captcha, verified_email)
+    again = register(client, solved_captcha, verified_email, name="Asha R.", role="mentor")
     assert again.status_code == 201
 
     db = SessionLocal()
@@ -80,8 +82,8 @@ def test_reregistering_updates_instead_of_failing(client, solved_captcha):
         db.close()
 
 
-def test_lead_list_requires_admin(client, solved_captcha):
-    register(client, solved_captcha)
+def test_lead_list_requires_admin(client, solved_captcha, verified_email):
+    register(client, solved_captcha, verified_email)
     assert client.get("/api/leads").status_code == 401
 
     response = client.post(
@@ -98,9 +100,9 @@ def test_lead_list_requires_admin(client, solved_captcha):
     assert client.get("/api/leads", headers={"Authorization": f"Bearer {token}"}).status_code == 403
 
 
-def test_admin_can_list_and_export(client, solved_captcha, admin_headers):
-    register(client, solved_captcha)
-    register(client, solved_captcha, email="ben@example.com", role="mentor", name="Ben")
+def test_admin_can_list_and_export(client, solved_captcha, verified_email, admin_headers):
+    register(client, solved_captcha, verified_email)
+    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     body = client.get("/api/leads", headers=admin_headers).json()
     assert body["total"] == 2
@@ -114,8 +116,8 @@ def test_admin_can_list_and_export(client, solved_captcha, admin_headers):
     assert "attachment" in csv_response.headers["content-disposition"]
 
 
-def test_invite_flow_end_to_end(client, solved_captcha, admin_headers, caplog):
-    register(client, solved_captcha)
+def test_invite_flow_end_to_end(client, solved_captcha, verified_email, admin_headers, caplog):
+    register(client, solved_captcha, verified_email)
 
     with caplog.at_level(logging.INFO, logger="app.email"):
         result = client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
@@ -123,8 +125,12 @@ def test_invite_flow_end_to_end(client, solved_captcha, admin_headers, caplog):
     assert result.json()["sent"] == 1
 
     # The console backend logs the body; recover the activation link from it.
+    # (Registration already logged one email_console record for the OTP code,
+    # so match on subject rather than taking the first record.)
     preview = next(
-        r.__dict__["body_preview"] for r in caplog.records if r.msg == "email_console"
+        r.__dict__["body_preview"]
+        for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("subject") == "Set up your SocioTurtle account"
     )
     token = re.search(r"invite=([A-Za-z0-9_-]+)", preview).group(1)
 
@@ -153,8 +159,8 @@ def test_invite_flow_end_to_end(client, solved_captcha, admin_headers, caplog):
     assert login.status_code == 200
 
 
-def test_invite_skips_already_invited(client, solved_captcha, admin_headers):
-    register(client, solved_captcha)
+def test_invite_skips_already_invited(client, solved_captcha, verified_email, admin_headers):
+    register(client, solved_captcha, verified_email)
     client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
     again = client.post(
         "/api/leads/invite", json={"lead_ids": [1]}, headers=admin_headers
@@ -163,9 +169,9 @@ def test_invite_skips_already_invited(client, solved_captcha, admin_headers):
     assert again["skipped"] == 1
 
 
-def test_invite_never_carries_a_password(client, solved_captcha, admin_headers, caplog):
+def test_invite_never_carries_a_password(client, solved_captcha, verified_email, admin_headers, caplog):
     """The invite must ship a link only; no credential is generated or stored."""
-    register(client, solved_captcha)
+    register(client, solved_captcha, verified_email)
     with caplog.at_level(logging.INFO, logger="app.email"):
         client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
 
@@ -196,9 +202,9 @@ def test_newsletter_requires_admin(client):
     assert response.status_code == 401
 
 
-def test_newsletter_send_and_unsubscribe(client, solved_captcha, admin_headers):
-    register(client, solved_captcha)
-    register(client, solved_captcha, email="ben@example.com", role="mentor", name="Ben")
+def test_newsletter_send_and_unsubscribe(client, solved_captcha, verified_email, admin_headers):
+    register(client, solved_captcha, verified_email)
+    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     result = client.post(
         "/api/newsletter/send",
@@ -226,9 +232,9 @@ def test_newsletter_send_and_unsubscribe(client, solved_captcha, admin_headers):
     assert after.json()["recipient_count"] == 1
 
 
-def test_newsletter_audience_filter(client, solved_captcha, admin_headers):
-    register(client, solved_captcha)
-    register(client, solved_captcha, email="ben@example.com", role="mentor", name="Ben")
+def test_newsletter_audience_filter(client, solved_captcha, verified_email, admin_headers):
+    register(client, solved_captcha, verified_email)
+    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     result = client.post(
         "/api/newsletter/send",
@@ -238,8 +244,8 @@ def test_newsletter_audience_filter(client, solved_captcha, admin_headers):
     assert result.json()["recipient_count"] == 1
 
 
-def test_newsletter_skips_non_opted_in(client, solved_captcha, admin_headers):
-    register(client, solved_captcha, newsletter_opt_in=False)
+def test_newsletter_skips_non_opted_in(client, solved_captcha, verified_email, admin_headers):
+    register(client, solved_captcha, verified_email, newsletter_opt_in=False)
     response = client.post(
         "/api/newsletter/send",
         json={"subject": "Nobody", "body_markdown": "Hi"},

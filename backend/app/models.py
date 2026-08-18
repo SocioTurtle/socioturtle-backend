@@ -103,3 +103,23 @@ class CaptchaChallenge(Base):
     answer_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class LeadOtp(Base):
+    """A one-time email verification code for the public lead-registration form.
+
+    `verify_token` is only set once the code is confirmed correct, and `redeemed`
+    prevents that token being reused across more than one `/api/leads` submission.
+    """
+
+    __tablename__ = "lead_otps"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), index=True, nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verify_token: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    redeemed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

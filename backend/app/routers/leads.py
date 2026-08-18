@@ -9,9 +9,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core import otp as otp_module
 from app.core.captcha import CaptchaError, get_captcha_provider
 from app.core.email import EmailError, EmailMessage, get_email_sender
-from app.core.email_templates import invite_email
+from app.core.email_templates import invite_email, otp_email
+from app.core.otp import OtpError
 from app.database import get_db
 from app.dependencies import get_current_admin
 from app.models import Lead, User
@@ -22,6 +24,10 @@ from app.schemas import (
     LeadCreate,
     LeadList,
     LeadOut,
+    OtpSendRequest,
+    OtpSendResult,
+    OtpVerifyRequest,
+    OtpVerifyResult,
 )
 
 logger = logging.getLogger("app.leads")
@@ -35,15 +41,57 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+@router.post("/otp/send", response_model=OtpSendResult)
+def send_lead_otp(payload: OtpSendRequest, db: Session = Depends(get_db)) -> OtpSendResult:
+    """Email a 6-digit code so the registration form can confirm the address is real."""
+    try:
+        code, ttl = otp_module.issue(db, payload.email)
+    except OtpError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+
+    html, text = otp_email(code, max(1, ttl // 60))
+    try:
+        get_email_sender().send(
+            EmailMessage(to=payload.email, subject="Your SocioTurtle verification code", html=html, text=text)
+        )
+    except EmailError as exc:
+        logger.error("otp_email_failed", extra={"email": payload.email, "error": str(exc)})
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not send the code. Please try again."
+        ) from exc
+
+    return OtpSendResult(message="Verification code sent.", expires_in=ttl)
+
+
+@router.post("/otp/verify", response_model=OtpVerifyResult)
+def verify_lead_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)) -> OtpVerifyResult:
+    """Confirm the code and return a short-lived token that unlocks POST /api/leads."""
+    try:
+        token = otp_module.verify(db, payload.email, payload.code)
+    except OtpError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OtpVerifyResult(verify_token=token)
+
+
 @router.post("", response_model=LeadAccepted, status_code=status.HTTP_201_CREATED)
 def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAccepted:
-    """Public endpoint used by the socioturtle.com widget. Captcha-protected."""
+    """Public endpoint used by the socioturtle.com site and widget.
+
+    Captcha-protected, and requires an `email_verify_token` from a completed
+    otp/send + otp/verify round trip for this exact email.
+    """
     try:
         get_captcha_provider().verify(db, payload.captcha)
     except CaptchaError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     email = payload.email.lower()
+
+    try:
+        otp_module.redeem(db, email, payload.email_verify_token)
+    except OtpError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     lead = db.query(Lead).filter(Lead.email == email).first()
 
     if lead is not None:
@@ -116,6 +164,10 @@ def list_leads(
         )
         or 0,
         "mentor": db.scalar(select(func.count()).select_from(Lead).where(Lead.role == "mentor"))
+        or 0,
+        "employer": db.scalar(
+            select(func.count()).select_from(Lead).where(Lead.role == "employer")
+        )
         or 0,
         "new": db.scalar(select(func.count()).select_from(Lead).where(Lead.status == "new")) or 0,
         "invited": db.scalar(
@@ -217,6 +269,11 @@ def send_invites(
                 skipped += 1
                 continue
             if lead.status == "invited" and not payload.resend:
+                skipped += 1
+                continue
+            if lead.role == "employer":
+                # Platform accounts are only ever student/mentor (see User.role);
+                # employer leads are a contact list, not invitable to activate.
                 skipped += 1
                 continue
 

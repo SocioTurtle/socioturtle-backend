@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     captcha_ttl_seconds: int = 300
     hcaptcha_secret: str = ""
 
+    otp_ttl_seconds: int = 600  # 10 minutes
+    otp_resend_cooldown_seconds: int = 30
+    otp_max_attempts: int = 5
+    otp_verified_window_minutes: int = 15  # how long a verified email stays usable to register
+
     log_level: str = "INFO"
     log_json: bool = True
     log_file: str | None = "logs/app.log"
