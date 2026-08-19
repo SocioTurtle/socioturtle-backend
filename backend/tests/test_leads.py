@@ -67,6 +67,52 @@ def test_register_rejects_bad_role(client, solved_captcha, verified_email):
     assert register(client, solved_captcha, verified_email, role="teacher").status_code == 422
 
 
+def test_register_email_only(client, solved_captcha, verified_email):
+    """The website's floating Register button sends nothing but email + otp + captcha."""
+    email = "waitlist@example.com"
+    response = client.post(
+        "/api/leads",
+        json={
+            "email": email,
+            "captcha": solved_captcha(),
+            "email_verify_token": verified_email(email),
+        },
+    )
+    assert response.status_code == 201
+
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.email == email).first()
+        assert lead.name == ""
+        assert lead.role == "unspecified"
+    finally:
+        db.close()
+
+
+def test_email_only_reregister_preserves_existing_name_and_role(client, solved_captcha, verified_email):
+    """Re-registering through the email-only flow must not clobber fuller data on file."""
+    register(client, solved_captcha, verified_email)  # name="Asha Rao", role="student"
+
+    email = "asha@example.com"
+    response = client.post(
+        "/api/leads",
+        json={
+            "email": email,
+            "captcha": solved_captcha(),
+            "email_verify_token": verified_email(email),
+        },
+    )
+    assert response.status_code == 201
+
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.email == email).first()
+        assert lead.name == "Asha Rao"
+        assert lead.role == "student"
+    finally:
+        db.close()
+
+
 def test_reregistering_updates_instead_of_failing(client, solved_captcha, verified_email):
     register(client, solved_captcha, verified_email)
     again = register(client, solved_captcha, verified_email, name="Asha R.", role="mentor")

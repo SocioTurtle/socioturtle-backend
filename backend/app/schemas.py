@@ -4,7 +4,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 Role = Literal["student", "mentor"]
-LeadRole = Literal["student", "mentor", "employer"]
+# "unspecified" covers the email-only registration flow (website's floating
+# Register button), which collects no role — as opposed to the full widget
+# form, which always sends a real one.
+LeadRole = Literal["student", "mentor", "employer", "unspecified"]
 
 
 class CaptchaAnswer(BaseModel):
@@ -74,9 +77,11 @@ class ResourceOut(BaseModel):
 
 
 class LeadCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    # Both default so the email-only flow can post just {email, captcha,
+    # email_verify_token} — the fuller widget form still sends real values.
+    name: str = Field(default="", max_length=120)
     email: EmailStr
-    role: LeadRole
+    role: LeadRole = "unspecified"
     phone: str = Field(default="", max_length=32)
     organisation: str = Field(default="", max_length=160)
     newsletter_opt_in: bool = False

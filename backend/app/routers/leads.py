@@ -97,10 +97,17 @@ def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAcc
     if lead is not None:
         # Re-registering is common (people forget). Refresh their details and
         # succeed quietly rather than leaking that the address is already on file.
-        lead.name = payload.name.strip()
-        lead.role = payload.role
-        lead.phone = payload.phone.strip()
-        lead.organisation = payload.organisation.strip()
+        # Only overwrite a field when this submission actually provided one — the
+        # email-only flow sends blank name/"unspecified" role, and that must not
+        # clobber real data from an earlier, fuller registration.
+        if payload.name.strip():
+            lead.name = payload.name.strip()
+        if payload.role != "unspecified":
+            lead.role = payload.role
+        if payload.phone.strip():
+            lead.phone = payload.phone.strip()
+        if payload.organisation.strip():
+            lead.organisation = payload.organisation.strip()
         if payload.newsletter_opt_in:
             lead.newsletter_opt_in = True
         db.commit()
@@ -167,6 +174,10 @@ def list_leads(
         or 0,
         "employer": db.scalar(
             select(func.count()).select_from(Lead).where(Lead.role == "employer")
+        )
+        or 0,
+        "unspecified": db.scalar(
+            select(func.count()).select_from(Lead).where(Lead.role == "unspecified")
         )
         or 0,
         "new": db.scalar(select(func.count()).select_from(Lead).where(Lead.status == "new")) or 0,
@@ -271,9 +282,11 @@ def send_invites(
             if lead.status == "invited" and not payload.resend:
                 skipped += 1
                 continue
-            if lead.role == "employer":
-                # Platform accounts are only ever student/mentor (see User.role);
-                # employer leads are a contact list, not invitable to activate.
+            if lead.role in ("employer", "unspecified"):
+                # Platform accounts are only ever student/mentor (see User.role).
+                # Employer leads are a contact list, not invitable to activate;
+                # unspecified-role leads (email-only signups) haven't chosen one
+                # yet either.
                 skipped += 1
                 continue
 
