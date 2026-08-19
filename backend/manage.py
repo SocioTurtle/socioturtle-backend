@@ -137,13 +137,15 @@ def main() -> int:
     sub.add_parser("list-admins", help="Show current admins")
 
     p_leads = sub.add_parser("leads", help="List captured leads")
-    p_leads.add_argument("--role", choices=["student", "mentor"])
+    p_leads.add_argument("--role", choices=["student", "mentor", "employer", "unspecified"])
     p_leads.add_argument("--status", choices=["new", "invited", "activated"])
 
     p_news = sub.add_parser("send-newsletter", help="Send a newsletter issue")
     p_news.add_argument("subject")
     p_news.add_argument("body_path", help="path to a markdown file")
-    p_news.add_argument("--audience", default="all", choices=["all", "student", "mentor"])
+    p_news.add_argument(
+        "--audience", default="all", choices=["all", "student", "mentor", "employer", "unspecified"]
+    )
 
     args = parser.parse_args()
 
