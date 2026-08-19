@@ -175,6 +175,12 @@ class ResendEmailSender(EmailSender):
                 timeout=15,
             )
             response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Surface Resend's own explanation (their JSON body names the bad
+            # field) instead of just the bare status code.
+            raise EmailError(
+                f"Could not send to {message.to}: {exc.response.status_code} {exc.response.text}"
+            ) from exc
         except httpx.HTTPError as exc:
             raise EmailError(f"Could not send to {message.to}: {exc}") from exc
 
