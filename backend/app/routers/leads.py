@@ -51,10 +51,12 @@ def send_lead_otp(payload: OtpSendRequest, db: Session = Depends(get_db)) -> Otp
 
     html, text = otp_email(code, max(1, ttl // 60))
     try:
+        # ValueError covers a misconfigured sender (e.g. a missing API key) —
+        # same failure mode as a delivery error from the caller's perspective.
         get_email_sender().send(
             EmailMessage(to=payload.email, subject="Your SocioTurtle verification code", html=html, text=text)
         )
-    except EmailError as exc:
+    except (EmailError, ValueError) as exc:
         logger.error("otp_email_failed", extra={"email": payload.email, "error": str(exc)})
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not send the code. Please try again."
@@ -269,7 +271,13 @@ def send_invites(
             detail="Provide lead_ids or set all_new=true",
         )
 
-    sender = get_email_sender()
+    try:
+        sender = get_email_sender()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Email sender is misconfigured: {exc}"
+        ) from exc
+
     sent = skipped = failed = 0
     errors: list[str] = []
     now = datetime.now(timezone.utc)

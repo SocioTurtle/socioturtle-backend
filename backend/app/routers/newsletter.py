@@ -28,7 +28,12 @@ def send_newsletter(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> NewsletterResult:
-    sender = get_email_sender()
+    try:
+        sender = get_email_sender()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Email sender is misconfigured: {exc}"
+        ) from exc
 
     if payload.test_to:
         html, text = newsletter_email(
