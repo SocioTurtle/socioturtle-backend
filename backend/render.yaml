@@ -1,7 +1,13 @@
-# Render blueprint. Point Render at this repo and it provisions both services.
+# Render blueprint. Point Render at this repo and it provisions the API service.
 #
-# Secrets (SECRET_KEY, RESEND_API_KEY) are marked sync:false so they are NOT
-# read from this file — set them in the Render dashboard, never in git.
+# Secrets (SECRET_KEY, RESEND_API_KEY, DATABASE_URL) are marked sync:false so
+# they are NOT read from this file — set them in the Render dashboard, never
+# in git.
+#
+# The database is Neon (external), not Render's own Postgres: Render's free
+# Postgres plan expires 30 days after creation and gets deleted, so this
+# blueprint no longer provisions one via `databases:` — DATABASE_URL is just a
+# plain external connection string set by hand in the dashboard.
 #
 # EMAIL_BACKEND is "resend" (HTTPS API) rather than "smtp": Render's outbound
 # network blocks raw SMTP ports (25/465/587) on this plan, which made the SMTP
@@ -27,9 +33,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: socioturtle-db
-          property: connectionString
+        sync: false
       - key: CORS_ORIGINS
         value: '["https://www.socioturtle.com","https://socioturtle.com"]'
       - key: PUBLIC_APP_URL
@@ -48,7 +52,3 @@ services:
         value: "true"
       - key: LOG_FILE
         value: ""
-
-databases:
-  - name: socioturtle-db
-    plan: free
