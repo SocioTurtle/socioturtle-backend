@@ -11,25 +11,42 @@ from html import escape
 import markdown as markdown_lib
 
 BRAND = "#4c5fd7"
+LOGO_URL = "https://www.socioturtle.com/images/logo_socioturtle.png"
+
+# Dark theme: black background throughout, bright white text for contrast.
+BG = "#000000"
+CARD_BORDER = "#2a2a30"
+TEXT = "#ffffff"
+MUTED = "#b9bed0"
+
+# Matches the logo's own neon cyan-to-green gradient. A true CSS gradient
+# on text doesn't render reliably across email clients, so the wordmark is
+# split into two solid neon tones instead — same effect, safer support.
+NEON_CYAN = "#22D3EE"
+NEON_GREEN = "#39FF88"
 
 _SHELL = """\
 <!doctype html>
 <html>
-  <body style="margin:0;padding:0;background:#f6f7fb;">
+  <body style="margin:0;padding:0;background:{bg};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-           style="background:#f6f7fb;padding:24px 12px;">
+           style="background:{bg};padding:24px 12px;">
       <tr><td align="center">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-               style="max-width:560px;background:#ffffff;border:1px solid #dfe3ec;
+               style="max-width:560px;background:{bg};border:1px solid {card_border};
                       border-radius:10px;overflow:hidden;
                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-                      color:#16192a;">
-          <tr><td style="padding:20px 28px;border-bottom:1px solid #dfe3ec;">
-            <span style="font-size:18px;font-weight:700;color:{brand};">SocioTurtle</span>
+                      color:{text};">
+          <tr><td style="padding:16px 28px;border-bottom:1px solid {card_border};">
+            <img src="{logo_url}" alt="" width="26" height="26"
+                 style="width:26px;height:26px;vertical-align:middle;border:0;display:inline-block;margin-right:8px;">
+            <span style="font-size:18px;font-weight:700;vertical-align:middle;">
+              <span style="color:{neon_cyan};">Socio</span><span style="color:{neon_green};">Turtle</span>
+            </span>
           </td></tr>
-          <tr><td style="padding:28px;font-size:15px;line-height:1.6;">{body}</td></tr>
-          <tr><td style="padding:18px 28px;border-top:1px solid #dfe3ec;
-                         font-size:12px;color:#6b7284;line-height:1.5;">{footer}</td></tr>
+          <tr><td style="padding:28px;font-size:15px;line-height:1.6;color:{text};">{body}</td></tr>
+          <tr><td style="padding:18px 28px;border-top:1px solid {card_border};
+                         font-size:12px;color:{muted};line-height:1.5;">{footer}</td></tr>
         </table>
       </td></tr>
     </table>
@@ -39,7 +56,17 @@ _SHELL = """\
 
 
 def _shell(body: str, footer: str) -> str:
-    return _SHELL.format(brand=BRAND, body=body, footer=footer)
+    return _SHELL.format(
+        logo_url=LOGO_URL,
+        bg=BG,
+        card_border=CARD_BORDER,
+        text=TEXT,
+        muted=MUTED,
+        neon_cyan=NEON_CYAN,
+        neon_green=NEON_GREEN,
+        body=body,
+        footer=footer,
+    )
 
 
 def _button(url: str, label: str) -> str:
@@ -65,10 +92,10 @@ def invite_email(name: str, role: str, activate_url: str, expires_hours: int) ->
         f"<p>Click below to choose your username and password — the link works once "
         f"and expires in {days} day{'s' if days != 1 else ''}.</p>"
         f"{_button(activate_url, 'Set up my account')}"
-        f'<p style="font-size:13px;color:#6b7284;">If the button does not work, paste this '
+        f'<p style="font-size:13px;color:{MUTED};">If the button does not work, paste this '
         f'into your browser:<br><span style="word-break:break-all;">'
         f"{escape(activate_url)}</span></p>"
-        f'<p style="font-size:13px;color:#6b7284;">We will never email you a password. '
+        f'<p style="font-size:13px;color:{MUTED};">We will never email you a password. '
         f"If you did not request this, you can ignore this message.</p>"
     )
     text = (
@@ -92,7 +119,7 @@ def otp_email(code: str, expires_minutes: int) -> tuple[str, str]:
         "<p>Hi there,</p>"
         "<p>Use this code to verify your email and finish registering with SocioTurtle:</p>"
         f"{code_block}"
-        f'<p style="font-size:13px;color:#6b7284;">This code expires in {expires_minutes} '
+        f'<p style="font-size:13px;color:{MUTED};">This code expires in {expires_minutes} '
         "minutes. If you did not request this, you can ignore this message.</p>"
     )
     text = (
@@ -122,7 +149,7 @@ def newsletter_email(subject: str, body_markdown: str, unsubscribe_url: str) -> 
     )
     footer = (
         "You are receiving this because you opted in to the SocioTurtle newsletter."
-        f'<br><a href="{escape(unsubscribe_url, quote=True)}" style="color:#6b7284;">'
+        f'<br><a href="{escape(unsubscribe_url, quote=True)}" style="color:{MUTED};">'
         "Unsubscribe</a>"
     )
     # Wrap each paragraph so plain-text clients don't render one long
