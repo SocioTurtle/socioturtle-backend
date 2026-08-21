@@ -203,6 +203,33 @@ def test_invite_flow_end_to_end(client, solved_captcha, verified_email, admin_he
     assert login.status_code == 200
 
 
+def test_unspecified_role_lead_activates_with_a_valid_platform_role(client, verified_email, caplog):
+    """Every registrant gets portal access — even the email-only flow, whose
+    lead.role is "unspecified" (not a valid User.role). Activation must not
+    crash and must fall back to a concrete role."""
+    email = "unspecified-activates@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={"email": email, "email_verify_token": verified_email(email)},
+        )
+    assert response.status_code == 201
+
+    preview = next(
+        r.__dict__["body_preview"]
+        for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+    )
+    token = re.search(r"invite=([A-Za-z0-9_-]+)", preview).group(1)
+
+    activated = client.post(
+        "/api/invites/activate",
+        json={"token": token, "username": "unspecified-user", "password": "their-own-password-1"},
+    )
+    assert activated.status_code == 201
+    assert activated.json()["user"]["role"] in ("student", "mentor")
+
+
 def test_invite_skips_already_invited(client, solved_captcha, verified_email, admin_headers):
     register(client, verified_email)
     client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
@@ -296,9 +323,10 @@ def test_employer_signup_is_not_auto_invited(client, verified_email, caplog):
     )
 
 
-def test_email_only_signup_is_not_auto_invited(client, verified_email, caplog):
-    """The email-only flow defaults to role="unspecified" — never auto-invited."""
-    email = "waitlist-no-invite@example.com"
+def test_email_only_signup_is_still_auto_invited(client, verified_email, caplog):
+    """Every registrant becomes a portal user (both roles) — including the
+    site's simple email-only flow, which defaults to role="unspecified"."""
+    email = "waitlist-gets-invited@example.com"
     with caplog.at_level(logging.INFO, logger="app.email"):
         response = client.post(
             "/api/leads",
@@ -306,7 +334,7 @@ def test_email_only_signup_is_not_auto_invited(client, verified_email, caplog):
         )
     assert response.status_code == 201
 
-    assert not any(
+    assert any(
         r.msg == "email_console" and r.__dict__.get("to") == email
         and r.__dict__.get("subject") == "Set up your SocioTurtle account"
         for r in caplog.records
@@ -445,10 +473,11 @@ def test_new_registrant_gets_the_latest_newsletter_issue(
     assert response.status_code == 201
 
     sent_to_newcomer = [
-        r for r in caplog.records if r.msg == "email_console" and r.__dict__.get("to") == email
+        r for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Week 1"
     ]
     assert len(sent_to_newcomer) == 1
-    assert sent_to_newcomer[0].__dict__["subject"] == "Week 1"
 
 
 def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
@@ -476,7 +505,9 @@ def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
     assert response.status_code == 201
 
     assert not any(
-        r.msg == "email_console" and r.__dict__.get("to") == email for r in caplog.records
+        r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Week 1"
+        for r in caplog.records
     )
 
 

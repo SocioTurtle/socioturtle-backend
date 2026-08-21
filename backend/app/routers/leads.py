@@ -47,8 +47,8 @@ def _mint_and_send_invite(db: Session, lead: Lead, sender=None) -> bool:
     caller decides whether a failure should be fatal (send_invites, which
     reports it back to the admin) or swallowed (auto-invite on registration).
     """
-    if lead.role not in ("student", "mentor"):
-        return False  # User.role only supports student/mentor (see UserOut)
+    if lead.role == "employer":
+        return False  # Employers are a contact list, not portal users
     if lead.status == "activated":
         return False
 
@@ -201,7 +201,9 @@ def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAcc
         )
         if lead.newsletter_opt_in:
             _send_latest_newsletter_issue(db, lead)
-        if lead.role in ("student", "mentor"):
+        # Every registrant becomes a portal user (both student and mentor
+        # access, not a role choice) — only employer leads are excluded.
+        if lead.role != "employer":
             _mint_and_send_invite(db, lead)
             db.commit()
 
@@ -356,11 +358,8 @@ def send_invites(
             if lead.status == "invited" and not payload.resend:
                 skipped += 1
                 continue
-            if lead.role in ("employer", "unspecified"):
-                # Platform accounts are only ever student/mentor (see User.role).
-                # Employer leads are a contact list, not invitable to activate;
-                # unspecified-role leads (email-only signups) haven't chosen one
-                # yet either.
+            if lead.role == "employer":
+                # Employer leads are a contact list, not portal users.
                 skipped += 1
                 continue
 

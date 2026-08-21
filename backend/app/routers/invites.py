@@ -73,11 +73,15 @@ def activate(payload: ActivateRequest, db: Session = Depends(get_db)) -> TokenPa
         )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
+    # Every portal user gets both the student and mentor experience — role
+    # isn't a real access restriction, just a leftover field on the account.
+    # lead.role may be "unspecified" (the site's simple email-only signup),
+    # which isn't a valid platform Role, so it needs a concrete default here.
     user = User(
         email=lead.email,
         username=payload.username,
         password_hash=hash_password(payload.password),
-        role=lead.role,
+        role=lead.role if lead.role in ("student", "mentor") else "student",
     )
     db.add(user)
     db.flush()
