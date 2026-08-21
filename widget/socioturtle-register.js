@@ -76,10 +76,6 @@
     ".st-hint{display:block;font-size:.74rem;color:#6b7284;margin-top:4px;}",
     ".st-otp-row{margin-top:10px;}",
     ".st-err{display:block;font-size:.74rem;color:#c0392b;margin-top:3px;}",
-    ".st-cap{display:flex;align-items:center;gap:10px;margin-bottom:8px;}",
-    ".st-cap img{width:180px;height:58px;border:1px solid #dfe3ec;border-radius:8px;background:#f2f4f7;}",
-    ".st-cap-ph{width:180px;height:58px;border:1px solid #dfe3ec;border-radius:8px;background:#f2f4f7;",
-    "display:flex;align-items:center;justify-content:center;font-size:.78rem;color:#6b7284;}",
     ".st-link{background:none;border:none;padding:0;color:#4c5fd7;font:inherit;font-size:.78rem;",
     "cursor:pointer;text-decoration:underline;}",
     ".st-check{display:flex;gap:8px;align-items:flex-start;font-size:.8rem;color:#6b7284;margin:12px 0;}",
@@ -97,8 +93,7 @@
     ".st-ov .st-card{position:relative;margin:auto;}",
     ".st-x{position:absolute;top:10px;right:12px;background:none;border:none;font-size:1.4rem;",
     "line-height:1;color:#6b7284;cursor:pointer;padding:4px 8px;}",
-    "@media(max-width:480px){.st-roles{flex-direction:column;}.st-row{flex-direction:column;gap:0;}",
-    ".st-cap{flex-direction:column;align-items:flex-start;}}",
+    "@media(max-width:480px){.st-roles{flex-direction:column;}.st-row{flex-direction:column;gap:0;}}",
   ].join("");
 
   function injectStyles() {
@@ -152,7 +147,6 @@
 
   function createForm(container, opts) {
     var role = null;
-    var challengeId = null;
     var busy = false;
     var otpBusy = false;
     var emailVerifyToken = null;
@@ -196,11 +190,6 @@
       '<div class="st-f"><label for="st-org">College / company <span style="font-weight:400;color:#8b91a1;">(optional)</span></label>',
       '<input id="st-org" name="organisation" autocomplete="organization"></div>',
       "</div>",
-      '<div class="st-f"><label for="st-cap">Type the characters shown</label>',
-      '<div class="st-cap"><div class="st-cap-ph" data-cap-slot>Loading…</div>',
-      '<button type="button" class="st-link" data-cap-refresh>New image</button></div>',
-      '<input id="st-cap" name="captcha" autocomplete="off" autocapitalize="characters" spellcheck="false">',
-      '<span class="st-err" data-err-captcha hidden></span></div>',
       '<label class="st-check"><input type="checkbox" name="news">',
       "<span>Email me the weekly SocioTurtle newsletter. You can unsubscribe any time.</span></label>",
       '<button type="submit" class="st-btn">Register</button>',
@@ -210,7 +199,6 @@
 
     var form = container.querySelector("form");
     var alertBox = container.querySelector("[data-alert]");
-    var capSlot = container.querySelector("[data-cap-slot]");
     var closeBtn = container.querySelector(".st-x");
 
     if (closeBtn) closeBtn.addEventListener("click", opts.onClose);
@@ -228,7 +216,7 @@
     }
 
     function clearErrors() {
-      ["role", "name", "email", "otp", "captcha"].forEach(function (f) {
+      ["role", "name", "email", "otp"].forEach(function (f) {
         setErr(f, "");
       });
       alertBox.hidden = true;
@@ -361,33 +349,6 @@
         });
     });
 
-    function loadCaptcha() {
-      challengeId = null;
-      capSlot.outerHTML = '<div class="st-cap-ph" data-cap-slot>Loading…</div>';
-      capSlot = container.querySelector("[data-cap-slot]");
-
-      fetch(CFG.api + "/api/auth/captcha")
-        .then(function (r) {
-          if (!r.ok) throw new Error("captcha " + r.status);
-          return r.json();
-        })
-        .then(function (data) {
-          challengeId = data.challenge_id;
-          var img = document.createElement("img");
-          img.src = data.image_data_uri;
-          img.alt = "Captcha challenge";
-          img.setAttribute("data-cap-slot", "");
-          capSlot.replaceWith(img);
-          capSlot = img;
-        })
-        .catch(function () {
-          capSlot.textContent = "Unavailable";
-        });
-    }
-
-    container.querySelector("[data-cap-refresh]").addEventListener("click", loadCaptcha);
-    loadCaptcha();
-
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       if (busy) return;
@@ -395,7 +356,6 @@
 
       var name = form.elements.name.value.trim();
       var email = form.elements.email.value.trim();
-      var answer = form.elements.captcha.value.trim();
       var bad = false;
 
       if (!role) {
@@ -416,16 +376,7 @@
         setErr("email", "Please verify your email address first.");
         bad = true;
       }
-      if (!answer) {
-        setErr("captcha", "Type the characters shown above.");
-        bad = true;
-      }
       if (bad) return;
-
-      if (!challengeId) {
-        showAlert("Captcha could not load. Please refresh the image and try again.");
-        return;
-      }
 
       busy = true;
       var submit = form.querySelector(".st-btn");
@@ -443,7 +394,6 @@
           organisation: form.elements.organisation.value.trim(),
           newsletter_opt_in: form.elements.news.checked,
           source: CFG.source,
-          captcha: { challenge_id: challengeId, answer: answer },
           email_verify_token: emailVerifyToken,
         }),
       })
@@ -457,8 +407,6 @@
             var detail = result.body && result.body.detail;
             if (typeof detail !== "string") detail = "Something went wrong. Please try again.";
             showAlert(detail);
-            form.elements.captcha.value = "";
-            loadCaptcha();
             return;
           }
           store(DONE_KEY, "1");
@@ -474,7 +422,6 @@
         })
         .catch(function () {
           showAlert("Could not reach the server. Please check your connection and try again.");
-          loadCaptcha();
         })
         .finally(function () {
           busy = false;
