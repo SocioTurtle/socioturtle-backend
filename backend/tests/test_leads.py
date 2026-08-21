@@ -278,6 +278,69 @@ def test_newsletter_send_and_unsubscribe(client, solved_captcha, verified_email,
     assert after.json()["recipient_count"] == 1
 
 
+def test_new_registrant_gets_the_latest_newsletter_issue(
+    client, solved_captcha, verified_email, admin_headers, caplog
+):
+    """A brand-new, opted-in lead should be caught up automatically."""
+    register(client, solved_captcha, verified_email)
+    client.post(
+        "/api/newsletter/send",
+        json={"subject": "Week 1", "body_markdown": "Hello there."},
+        headers=admin_headers,
+    )
+
+    email = "newcomer@example.com"
+    token = verified_email(email)  # sends its own OTP email — capture that separately from below
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "email": email,
+                "newsletter_opt_in": True,
+                "captcha": solved_captcha(),
+                "email_verify_token": token,
+            },
+        )
+    assert response.status_code == 201
+
+    sent_to_newcomer = [
+        r for r in caplog.records if r.msg == "email_console" and r.__dict__.get("to") == email
+    ]
+    assert len(sent_to_newcomer) == 1
+    assert sent_to_newcomer[0].__dict__["subject"] == "Week 1"
+
+
+def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
+    client, solved_captcha, verified_email, admin_headers, caplog
+):
+    register(client, solved_captcha, verified_email)
+    client.post(
+        "/api/newsletter/send",
+        json={"subject": "Week 1", "body_markdown": "Hello there."},
+        headers=admin_headers,
+    )
+
+    email = "no-thanks@example.com"
+    token = verified_email(email)
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "email": email,
+                "newsletter_opt_in": False,
+                "captcha": solved_captcha(),
+                "email_verify_token": token,
+            },
+        )
+    assert response.status_code == 201
+
+    assert not any(
+        r.msg == "email_console" and r.__dict__.get("to") == email for r in caplog.records
+    )
+
+
 def test_newsletter_audience_filter(client, solved_captcha, verified_email, admin_headers):
     register(client, solved_captcha, verified_email)
     register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")

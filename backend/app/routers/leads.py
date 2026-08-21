@@ -12,11 +12,11 @@ from app.config import get_settings
 from app.core import otp as otp_module
 from app.core.captcha import CaptchaError, get_captcha_provider
 from app.core.email import EmailError, EmailMessage, get_email_sender
-from app.core.email_templates import invite_email, otp_email
+from app.core.email_templates import invite_email, newsletter_email, otp_email
 from app.core.otp import OtpError
 from app.database import get_db
 from app.dependencies import get_current_admin
-from app.models import Lead, User
+from app.models import Lead, NewsletterIssue, User
 from app.schemas import (
     InviteRequest,
     InviteResult,
@@ -39,6 +39,35 @@ def _hash_token(raw: str) -> str:
     import hashlib
 
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _send_latest_newsletter_issue(db: Session, lead: Lead) -> None:
+    """Catch a brand-new, opted-in registrant up on the most recent issue.
+
+    Best-effort: a failure here must never fail the registration itself, so
+    it's logged rather than raised.
+    """
+    latest = db.query(NewsletterIssue).order_by(NewsletterIssue.sent_at.desc()).first()
+    if latest is None:
+        return
+
+    unsubscribe_url = (
+        f"{settings.public_api_url.rstrip('/')}/api/newsletter/unsubscribe?token={lead.unsubscribe_token}"
+    )
+    try:
+        html, text = newsletter_email(latest.subject, latest.body_markdown, unsubscribe_url)
+        get_email_sender().send(
+            EmailMessage(
+                to=lead.email,
+                subject=latest.subject,
+                html=html,
+                text=text,
+                list_unsubscribe=unsubscribe_url,
+            )
+        )
+        logger.info("welcome_issue_sent", extra={"lead_id": lead.id, "issue_id": latest.id})
+    except (EmailError, ValueError) as exc:
+        logger.error("welcome_issue_failed", extra={"lead_id": lead.id, "error": str(exc)})
 
 
 @router.post("/otp/send", response_model=OtpSendResult)
@@ -137,6 +166,8 @@ def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAcc
                 "newsletter": lead.newsletter_opt_in,
             },
         )
+        if lead.newsletter_opt_in:
+            _send_latest_newsletter_issue(db, lead)
 
     return LeadAccepted(message="Thanks for registering. We will be in touch shortly.")
 
