@@ -7,7 +7,7 @@ from app.database import SessionLocal
 from app.models import Lead, User
 
 
-def register(client, solved_captcha, verified_email, **overrides):
+def register(client, verified_email, **overrides):
     email = overrides.get("email", "asha@example.com")
     payload = {
         "name": "Asha Rao",
@@ -16,7 +16,6 @@ def register(client, solved_captcha, verified_email, **overrides):
         "phone": "9999999999",
         "organisation": "IIT Delhi",
         "newsletter_opt_in": True,
-        "captcha": solved_captcha(),
         "email_verify_token": verified_email(email),
     }
     payload.update(overrides)
@@ -52,29 +51,22 @@ def admin_headers(admin_token):
 
 
 def test_register_lead(client, solved_captcha, verified_email):
-    response = register(client, solved_captcha, verified_email)
+    response = register(client, verified_email)
     assert response.status_code == 201
     assert response.json()["status"] == "registered"
 
 
-def test_register_requires_captcha(client, solved_captcha, verified_email):
-    bad = solved_captcha()
-    bad["answer"] = "WRONG"
-    assert register(client, solved_captcha, verified_email, captcha=bad).status_code == 400
-
-
 def test_register_rejects_bad_role(client, solved_captcha, verified_email):
-    assert register(client, solved_captcha, verified_email, role="teacher").status_code == 422
+    assert register(client, verified_email, role="teacher").status_code == 422
 
 
-def test_register_email_only(client, solved_captcha, verified_email):
-    """The website's floating Register button sends nothing but email + otp + captcha."""
+def test_register_email_only(client, verified_email):
+    """The website's floating Register button sends nothing but email + otp."""
     email = "waitlist@example.com"
     response = client.post(
         "/api/leads",
         json={
             "email": email,
-            "captcha": solved_captcha(),
             "email_verify_token": verified_email(email),
         },
     )
@@ -89,16 +81,15 @@ def test_register_email_only(client, solved_captcha, verified_email):
         db.close()
 
 
-def test_email_only_reregister_preserves_existing_name_and_role(client, solved_captcha, verified_email):
+def test_email_only_reregister_preserves_existing_name_and_role(client, verified_email):
     """Re-registering through the email-only flow must not clobber fuller data on file."""
-    register(client, solved_captcha, verified_email)  # name="Asha Rao", role="student"
+    register(client, verified_email)  # name="Asha Rao", role="student"
 
     email = "asha@example.com"
     response = client.post(
         "/api/leads",
         json={
             "email": email,
-            "captcha": solved_captcha(),
             "email_verify_token": verified_email(email),
         },
     )
@@ -114,8 +105,8 @@ def test_email_only_reregister_preserves_existing_name_and_role(client, solved_c
 
 
 def test_reregistering_updates_instead_of_failing(client, solved_captcha, verified_email):
-    register(client, solved_captcha, verified_email)
-    again = register(client, solved_captcha, verified_email, name="Asha R.", role="mentor")
+    register(client, verified_email)
+    again = register(client, verified_email, name="Asha R.", role="mentor")
     assert again.status_code == 201
 
     db = SessionLocal()
@@ -129,7 +120,7 @@ def test_reregistering_updates_instead_of_failing(client, solved_captcha, verifi
 
 
 def test_lead_list_requires_admin(client, solved_captcha, verified_email):
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
     assert client.get("/api/leads").status_code == 401
 
     response = client.post(
@@ -147,8 +138,8 @@ def test_lead_list_requires_admin(client, solved_captcha, verified_email):
 
 
 def test_admin_can_list_and_export(client, solved_captcha, verified_email, admin_headers):
-    register(client, solved_captcha, verified_email)
-    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
+    register(client, verified_email)
+    register(client, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     body = client.get("/api/leads", headers=admin_headers).json()
     assert body["total"] == 2
@@ -163,7 +154,7 @@ def test_admin_can_list_and_export(client, solved_captcha, verified_email, admin
 
 
 def test_invite_flow_end_to_end(client, solved_captcha, verified_email, admin_headers, caplog):
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
 
     with caplog.at_level(logging.INFO, logger="app.email"):
         result = client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
@@ -206,7 +197,7 @@ def test_invite_flow_end_to_end(client, solved_captcha, verified_email, admin_he
 
 
 def test_invite_skips_already_invited(client, solved_captcha, verified_email, admin_headers):
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
     client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
     again = client.post(
         "/api/leads/invite", json={"lead_ids": [1]}, headers=admin_headers
@@ -217,7 +208,7 @@ def test_invite_skips_already_invited(client, solved_captcha, verified_email, ad
 
 def test_invite_never_carries_a_password(client, solved_captcha, verified_email, admin_headers, caplog):
     """The invite must ship a link only; no credential is generated or stored."""
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
     with caplog.at_level(logging.INFO, logger="app.email"):
         client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
 
@@ -249,8 +240,8 @@ def test_newsletter_requires_admin(client):
 
 
 def test_newsletter_send_and_unsubscribe(client, solved_captcha, verified_email, admin_headers):
-    register(client, solved_captcha, verified_email)
-    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
+    register(client, verified_email)
+    register(client, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     result = client.post(
         "/api/newsletter/send",
@@ -282,7 +273,7 @@ def test_new_registrant_gets_the_latest_newsletter_issue(
     client, solved_captcha, verified_email, admin_headers, caplog
 ):
     """A brand-new, opted-in lead should be caught up automatically."""
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
     client.post(
         "/api/newsletter/send",
         json={"subject": "Week 1", "body_markdown": "Hello there."},
@@ -298,7 +289,6 @@ def test_new_registrant_gets_the_latest_newsletter_issue(
             json={
                 "email": email,
                 "newsletter_opt_in": True,
-                "captcha": solved_captcha(),
                 "email_verify_token": token,
             },
         )
@@ -314,7 +304,7 @@ def test_new_registrant_gets_the_latest_newsletter_issue(
 def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
     client, solved_captcha, verified_email, admin_headers, caplog
 ):
-    register(client, solved_captcha, verified_email)
+    register(client, verified_email)
     client.post(
         "/api/newsletter/send",
         json={"subject": "Week 1", "body_markdown": "Hello there."},
@@ -330,7 +320,6 @@ def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
             json={
                 "email": email,
                 "newsletter_opt_in": False,
-                "captcha": solved_captcha(),
                 "email_verify_token": token,
             },
         )
@@ -342,8 +331,8 @@ def test_registrant_without_newsletter_opt_in_gets_no_issue_email(
 
 
 def test_newsletter_audience_filter(client, solved_captcha, verified_email, admin_headers):
-    register(client, solved_captcha, verified_email)
-    register(client, solved_captcha, verified_email, email="ben@example.com", role="mentor", name="Ben")
+    register(client, verified_email)
+    register(client, verified_email, email="ben@example.com", role="mentor", name="Ben")
 
     result = client.post(
         "/api/newsletter/send",
@@ -354,7 +343,7 @@ def test_newsletter_audience_filter(client, solved_captcha, verified_email, admi
 
 
 def test_newsletter_skips_non_opted_in(client, solved_captcha, verified_email, admin_headers):
-    register(client, solved_captcha, verified_email, newsletter_opt_in=False)
+    register(client, verified_email, newsletter_opt_in=False)
     response = client.post(
         "/api/newsletter/send",
         json={"subject": "Nobody", "body_markdown": "Hi"},

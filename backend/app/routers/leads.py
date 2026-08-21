@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core import otp as otp_module
-from app.core.captcha import CaptchaError, get_captcha_provider
 from app.core.email import EmailError, EmailMessage, get_email_sender
 from app.core.email_templates import invite_email, newsletter_email, otp_email
 from app.core.otp import OtpError
@@ -108,14 +107,10 @@ def verify_lead_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)) ->
 def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAccepted:
     """Public endpoint used by the socioturtle.com site and widget.
 
-    Captcha-protected, and requires an `email_verify_token` from a completed
-    otp/send + otp/verify round trip for this exact email.
+    Requires an `email_verify_token` from a completed otp/send + otp/verify
+    round trip for this exact email — that's the bot/abuse gate now, so no
+    separate captcha is needed on top of it.
     """
-    try:
-        get_captcha_provider().verify(db, payload.captcha)
-    except CaptchaError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
     email = payload.email.lower()
 
     try:

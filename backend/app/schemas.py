@@ -77,7 +77,7 @@ class ResourceOut(BaseModel):
 
 
 class LeadCreate(BaseModel):
-    # Both default so the email-only flow can post just {email, captcha,
+    # name/role default so the email-only flow can post just {email,
     # email_verify_token} — the fuller widget form still sends real values.
     name: str = Field(default="", max_length=120)
     email: EmailStr
@@ -86,7 +86,6 @@ class LeadCreate(BaseModel):
     organisation: str = Field(default="", max_length=160)
     newsletter_opt_in: bool = False
     source: str = Field(default="website", max_length=64)
-    captcha: CaptchaAnswer
     email_verify_token: str = Field(min_length=1, max_length=64)
 
 
