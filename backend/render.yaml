@@ -35,7 +35,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
-        value: '["https://www.socioturtle.com","https://socioturtle.com"]'
+        value: '["https://www.socioturtle.com","https://socioturtle.com","https://app.socioturtle.com"]'
       - key: PUBLIC_APP_URL
         value: https://app.socioturtle.com
       - key: PUBLIC_API_URL

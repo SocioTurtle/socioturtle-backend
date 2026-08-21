@@ -154,16 +154,23 @@ def test_admin_can_list_and_export(client, solved_captcha, verified_email, admin
 
 
 def test_invite_flow_end_to_end(client, solved_captcha, verified_email, admin_headers, caplog):
-    register(client, verified_email)
-
+    # Registering as a student/mentor already auto-invites (see register_lead) —
+    # so the admin invite call below has nothing left to do; it's here only to
+    # confirm that "already invited" is reported correctly, not to trigger the
+    # invite itself.
     with caplog.at_level(logging.INFO, logger="app.email"):
-        result = client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
+        register(client, verified_email)
+
+    # all_new targets status=="new" leads — there are none, since auto-invite
+    # already moved this lead to "invited".
+    result = client.post("/api/leads/invite", json={"all_new": True}, headers=admin_headers)
     assert result.status_code == 200
-    assert result.json()["sent"] == 1
+    assert result.json()["sent"] == 0
+    assert result.json()["skipped"] == 0
 
     # The console backend logs the body; recover the activation link from it.
-    # (Registration already logged one email_console record for the OTP code,
-    # so match on subject rather than taking the first record.)
+    # (Registration also logged an email_console record for the OTP code, so
+    # match on subject rather than taking the first record.)
     preview = next(
         r.__dict__["body_preview"]
         for r in caplog.records
@@ -222,6 +229,149 @@ def test_invite_never_carries_a_password(client, solved_captcha, verified_email,
         assert db.query(User).filter(User.email == "asha@example.com").first() is None
     finally:
         db.close()
+
+
+def test_new_student_signup_gets_an_invite_email(client, verified_email, caplog):
+    email = "new-student@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "name": "New Student",
+                "email": email,
+                "role": "student",
+                "email_verify_token": verified_email(email),
+            },
+        )
+    assert response.status_code == 201
+
+    invites = [
+        r for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+    ]
+    assert len(invites) == 1
+
+
+def test_new_mentor_signup_gets_an_invite_email(client, verified_email, caplog):
+    email = "new-mentor@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "name": "New Mentor",
+                "email": email,
+                "role": "mentor",
+                "email_verify_token": verified_email(email),
+            },
+        )
+    assert response.status_code == 201
+
+    invites = [
+        r for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+    ]
+    assert len(invites) == 1
+
+
+def test_employer_signup_is_not_auto_invited(client, verified_email, caplog):
+    email = "new-employer@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "name": "New Employer",
+                "email": email,
+                "role": "employer",
+                "email_verify_token": verified_email(email),
+            },
+        )
+    assert response.status_code == 201
+
+    assert not any(
+        r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+        for r in caplog.records
+    )
+
+
+def test_email_only_signup_is_not_auto_invited(client, verified_email, caplog):
+    """The email-only flow defaults to role="unspecified" — never auto-invited."""
+    email = "waitlist-no-invite@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={"email": email, "email_verify_token": verified_email(email)},
+        )
+    assert response.status_code == 201
+
+    assert not any(
+        r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+        for r in caplog.records
+    )
+
+
+def test_re_registering_does_not_send_a_second_invite(client, verified_email, caplog):
+    email = "repeat-student@example.com"
+    payload = {
+        "name": "Repeat Student",
+        "email": email,
+        "role": "student",
+    }
+    payload["email_verify_token"] = verified_email(email)
+    assert client.post("/api/leads", json=payload).status_code == 201
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        payload["email_verify_token"] = verified_email(email)
+        response = client.post("/api/leads", json=payload)
+    assert response.status_code == 201
+
+    assert not any(
+        r.msg == "email_console" and r.__dict__.get("to") == email
+        and r.__dict__.get("subject") == "Set up your SocioTurtle account"
+        for r in caplog.records
+    )
+
+
+def test_newsletter_and_invite_both_fire_for_a_new_opted_in_student(
+    client, verified_email, admin_headers, caplog
+):
+    # /api/newsletter/send 400s with no existing recipients, so seed one first.
+    register(client, verified_email)
+    result = client.post(
+        "/api/newsletter/send",
+        json={"subject": "Week 1", "body_markdown": "Hello there."},
+        headers=admin_headers,
+    )
+    assert result.status_code == 200
+
+    email = "student-plus-newsletter@example.com"
+    with caplog.at_level(logging.INFO, logger="app.email"):
+        response = client.post(
+            "/api/leads",
+            json={
+                "name": "Student Plus",
+                "email": email,
+                "role": "student",
+                "newsletter_opt_in": True,
+                "email_verify_token": verified_email(email),
+            },
+        )
+    assert response.status_code == 201
+
+    subjects = {
+        r.__dict__["subject"]
+        for r in caplog.records
+        if r.msg == "email_console" and r.__dict__.get("to") == email
+    }
+    assert subjects == {
+        "Your SocioTurtle verification code",
+        "Week 1",
+        "Set up your SocioTurtle account",
+    }
 
 
 def test_activate_rejects_bad_token(client):

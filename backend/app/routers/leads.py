@@ -40,6 +40,44 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _mint_and_send_invite(db: Session, lead: Lead, sender=None) -> bool:
+    """Mint a one-time activation token for `lead` and email it.
+
+    Returns True on send success, False on skip/failure. Never raises — the
+    caller decides whether a failure should be fatal (send_invites, which
+    reports it back to the admin) or swallowed (auto-invite on registration).
+    """
+    if lead.role not in ("student", "mentor"):
+        return False  # User.role only supports student/mentor (see UserOut)
+    if lead.status == "activated":
+        return False
+
+    now = datetime.now(timezone.utc)
+    raw_token = secrets.token_urlsafe(32)
+    lead.invite_token_hash = _hash_token(raw_token)
+    lead.invite_expires_at = now + timedelta(hours=settings.invite_ttl_hours)
+
+    activate_url = f"{settings.public_app_url.rstrip('/')}/?invite={raw_token}"
+    html, text = invite_email(lead.name, lead.role, activate_url, settings.invite_ttl_hours)
+
+    email_sender = sender or get_email_sender()
+    try:
+        email_sender.send(
+            EmailMessage(to=lead.email, subject="Set up your SocioTurtle account", html=html, text=text)
+        )
+    except EmailError as exc:
+        # Roll the token back so a failed send cannot leave a live link.
+        lead.invite_token_hash = None
+        lead.invite_expires_at = None
+        logger.error("invite_failed", extra={"lead_id": lead.id, "error": str(exc)})
+        return False
+
+    lead.status = "invited"
+    lead.invited_at = now
+    logger.info("invite_sent", extra={"lead_id": lead.id, "role": lead.role})
+    return True
+
+
 def _send_latest_newsletter_issue(db: Session, lead: Lead) -> None:
     """Catch a brand-new, opted-in registrant up on the most recent issue.
 
@@ -163,6 +201,9 @@ def register_lead(payload: LeadCreate, db: Session = Depends(get_db)) -> LeadAcc
         )
         if lead.newsletter_opt_in:
             _send_latest_newsletter_issue(db, lead)
+        if lead.role in ("student", "mentor"):
+            _mint_and_send_invite(db, lead)
+            db.commit()
 
     return LeadAccepted(message="Thanks for registering. We will be in touch shortly.")
 
@@ -306,7 +347,6 @@ def send_invites(
 
     sent = skipped = failed = 0
     errors: list[str] = []
-    now = datetime.now(timezone.utc)
 
     with sender.connection() as conn:
         for lead in targets:
@@ -324,37 +364,11 @@ def send_invites(
                 skipped += 1
                 continue
 
-            raw_token = secrets.token_urlsafe(32)
-            lead.invite_token_hash = _hash_token(raw_token)
-            lead.invite_expires_at = now + timedelta(hours=settings.invite_ttl_hours)
-
-            activate_url = f"{settings.public_app_url.rstrip('/')}/?invite={raw_token}"
-            html, text = invite_email(
-                lead.name, lead.role, activate_url, settings.invite_ttl_hours
-            )
-
-            try:
-                conn.send(
-                    EmailMessage(
-                        to=lead.email,
-                        subject="Set up your SocioTurtle account",
-                        html=html,
-                        text=text,
-                    )
-                )
-            except EmailError as exc:
+            if _mint_and_send_invite(db, lead, sender=conn):
+                sent += 1
+            else:
                 failed += 1
-                errors.append(f"{lead.email}: {exc}")
-                logger.error("invite_failed", extra={"lead_id": lead.id, "error": str(exc)})
-                # Roll the token back so a failed send cannot leave a live link.
-                lead.invite_token_hash = None
-                lead.invite_expires_at = None
-                continue
-
-            lead.status = "invited"
-            lead.invited_at = now
-            sent += 1
-            logger.info("invite_sent", extra={"lead_id": lead.id, "role": lead.role})
+                errors.append(f"{lead.email}: delivery failed")
 
     db.commit()
     return InviteResult(sent=sent, skipped=skipped, failed=failed, errors=errors[:20])
