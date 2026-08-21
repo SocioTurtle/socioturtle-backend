@@ -4,6 +4,8 @@ Styles are inlined because most mail clients discard <style> blocks, and the
 layout stays single-column so it survives Gmail, Outlook, and phone screens.
 """
 
+import re
+import textwrap
 from html import escape
 
 import markdown as markdown_lib
@@ -102,12 +104,33 @@ def otp_email(code: str, expires_minutes: int) -> tuple[str, str]:
     return _shell(body, "You are receiving this because you started registering on socioturtle.com."), text
 
 
+def _constrain_images(html: str) -> str:
+    """Cap embedded images to the email column width.
+
+    Markdown's <img> output carries no size attributes, so a full-resolution
+    photo (e.g. straight from a phone) renders at its native width — often
+    1000px+ — inside a ~560px email column, forcing the whole message into
+    horizontal scroll rather than just the image. Email clients strip <style>
+    blocks, so this has to be an inline style on the tag itself.
+    """
+    return re.sub(r"<img ", '<img style="max-width:100%;height:auto;display:block;" ', html)
+
+
 def newsletter_email(subject: str, body_markdown: str, unsubscribe_url: str) -> tuple[str, str]:
-    rendered = markdown_lib.markdown(body_markdown, extensions=["extra", "sane_lists", "nl2br"])
+    rendered = _constrain_images(
+        markdown_lib.markdown(body_markdown, extensions=["extra", "sane_lists", "nl2br"])
+    )
     footer = (
         "You are receiving this because you opted in to the SocioTurtle newsletter."
         f'<br><a href="{escape(unsubscribe_url, quote=True)}" style="color:#6b7284;">'
         "Unsubscribe</a>"
     )
-    text = f"{subject}\n\n{body_markdown}\n\n---\nUnsubscribe: {unsubscribe_url}"
+    # Wrap each paragraph so plain-text clients don't render one long
+    # unbroken line per paragraph — textwrap only fills within a paragraph,
+    # so blank lines between paragraphs are preserved.
+    wrapped = "\n\n".join(
+        textwrap.fill(paragraph, width=72) if paragraph.strip() else paragraph
+        for paragraph in body_markdown.split("\n\n")
+    )
+    text = f"{subject}\n\n{wrapped}\n\n---\nUnsubscribe: {unsubscribe_url}"
     return _shell(rendered, footer), text
