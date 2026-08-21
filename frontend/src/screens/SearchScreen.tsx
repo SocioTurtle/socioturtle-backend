@@ -1,33 +1,14 @@
 import { Alert, Button, Card } from "../components/ui";
 import type { ApiClient } from "../core/api/client";
-import { useAuth } from "../core/hooks/useAuth";
 import { useSearch } from "../core/hooks/useSearch";
 
 export function SearchScreen({ client }: { client: ApiClient }) {
-  const { user, logout } = useAuth();
   const search = useSearch(client);
 
   return (
     <div className="search-screen">
-      <header className="topbar">
-        <div>
-          <h1>Socioturtle</h1>
-          <p className="muted">Search saved resources</p>
-        </div>
-        <div className="topbar-actions">
-          {user ? (
-            <>
-              <span className="muted">{user.username}</span>
-              <span className={`role-badge role-badge-${user.role}`}>{user.role}</span>
-              <Button variant="ghost" onClick={() => void logout()}>
-                Sign out
-              </Button>
-            </>
-          ) : (
-            <span className="muted">Browsing as guest</span>
-          )}
-        </div>
-      </header>
+      <h1>Resources</h1>
+      <p className="muted">Search saved resources</p>
 
       <div className="search-controls">
         <input

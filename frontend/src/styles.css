@@ -54,6 +54,15 @@ h1 {
   margin: 40px auto;
 }
 
+.dashboard-section {
+  margin-top: 16px;
+}
+
+.dashboard-section h2 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+}
+
 form {
   display: flex;
   flex-direction: column;
@@ -356,6 +365,23 @@ label {
   gap: 6px;
   margin-bottom: 18px;
   border-bottom: 1px solid var(--border);
+}
+
+.app-nav {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-nav-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.app-nav-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .tab {

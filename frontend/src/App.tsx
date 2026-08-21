@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 
 import { AuthProvider, useAuth } from "./core/hooks/useAuth";
 import type { ApiClient } from "./core/api/client";
+import { Button } from "./components/ui";
 import { ActivateScreen } from "./screens/ActivateScreen";
 import { AdminScreen } from "./screens/AdminScreen";
+import { Dashboard } from "./screens/Dashboard";
 import { LoginScreen } from "./screens/LoginScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { SignupScreen } from "./screens/SignupScreen";
 
 type AuthView = "login" | "signup";
-type AppView = "search" | "admin";
+type AppView = "dashboard" | "resources" | "admin";
 
 /** Reads ?invite=… once; the app has no router, so this is the whole of routing. */
 function readInviteToken(): string | null {
@@ -18,9 +20,9 @@ function readInviteToken(): string | null {
 }
 
 function Routes({ client }: { client: ApiClient }) {
-  const { user, initialising } = useAuth();
+  const { user, initialising, logout } = useAuth();
   const [authView, setAuthView] = useState<AuthView>("login");
-  const [appView, setAppView] = useState<AppView>("search");
+  const [appView, setAppView] = useState<AppView>("dashboard");
   const [inviteToken, setInviteToken] = useState<string | null>(readInviteToken);
 
   // Strip the token from the address bar so it is not left in history or copied
@@ -49,26 +51,44 @@ function Routes({ client }: { client: ApiClient }) {
 
   return (
     <>
-      {user.is_admin && (
-        <nav className="app-nav">
+      {/* Nav only renders once a user is logged in — logged-out visitors
+          above never reach this branch, so there's no separate check needed. */}
+      <nav className="app-nav">
+        <div className="app-nav-tabs">
           <button
-            className={appView === "search" ? "tab tab-active" : "tab"}
-            onClick={() => setAppView("search")}
+            className={appView === "dashboard" ? "tab tab-active" : "tab"}
+            onClick={() => setAppView("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            className={appView === "resources" ? "tab tab-active" : "tab"}
+            onClick={() => setAppView("resources")}
           >
             Resources
           </button>
-          <button
-            className={appView === "admin" ? "tab tab-active" : "tab"}
-            onClick={() => setAppView("admin")}
-          >
-            Admin
-          </button>
-        </nav>
-      )}
+          {user.is_admin && (
+            <button
+              className={appView === "admin" ? "tab tab-active" : "tab"}
+              onClick={() => setAppView("admin")}
+            >
+              Admin
+            </button>
+          )}
+        </div>
+        <div className="app-nav-user">
+          <span className="muted">{user.username}</span>
+          <Button variant="ghost" onClick={() => void logout()}>
+            Sign out
+          </Button>
+        </div>
+      </nav>
       {appView === "admin" && user.is_admin ? (
         <AdminScreen client={client} />
-      ) : (
+      ) : appView === "resources" ? (
         <SearchScreen client={client} />
+      ) : (
+        <Dashboard onGoToResources={() => setAppView("resources")} />
       )}
     </>
   );

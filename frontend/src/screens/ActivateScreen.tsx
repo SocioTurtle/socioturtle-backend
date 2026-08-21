@@ -104,8 +104,8 @@ export function ActivateScreen({
     <Card className="auth-card">
       <h1>Welcome, {check.name?.split(" ")[0] ?? "there"}</h1>
       <p className="muted">
-        Setting up the <strong>{check.role}</strong> account for {check.email}. Choose a username
-        and password to finish.
+        Setting up your SocioTurtle account for {check.email}. Choose a username and password to
+        finish.
       </p>
 
       <form onSubmit={handleSubmit} noValidate>
